@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Client Example</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        background: #f0f0f0;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .section {
+        margin-bottom: 30px;
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      input,
+      button {
+        padding: 10px;
+        margin: 5px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        cursor: pointer;
+        border: none;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .log {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      .log-item {
+        margin: 5px 0;
+        padding: 5px;
+        border-bottom: 1px solid #ddd;
+      }
+      .success {
+        color: green;
+      }
+      .error {
+        color: red;
+      }
+      .info {
+        color: blue;
+      }
+      .player-card {
+        display: inline-block;
+        padding: 10px;
+        margin: 5px;
+        background: #e9ecef;
+        border-radius: 5px;
+        border: 2px solid #007bff;
+      }
+      h2 {
+        color: #333;
+      }
+      h3 {
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎮 Game Backend Client Example</h1>
+
+      <!-- Server URL Section -->
+      <div class="section" id="serverSection">
+        <h2>0. Server URL</h2>
+        <p style="margin: 0 0 10px 0">
+          Use <strong>http://localhost:5000</strong> if this page is opened on
+          the same PC as Docker. For LAN testing (other devices), use your PC IP
+          like <strong>http://192.168.1.50:5000</strong>.
+        </p>
+        <input
+          type="text"
+          id="serverUrl"
+          value="http://localhost:5000"
+          style="width: 100%"
+        />
+      </div>
+
+      <!-- Authentication Section -->
+      <div class="section" id="authSection">
+        <h2>1. Authentication</h2>
+        <div>
+          <h3>Register</h3>
+          <input type="text" id="regUsername" placeholder="Username" />
+          <input type="email" id="regEmail" placeholder="Email" />
+          <input type="password" id="regPassword" placeholder="Password" />
+          <button onclick="register()">Register</button>
+        </div>
+        <div style="margin-top: 20px">
+          <h3>Login</h3>
+          <input type="email" id="loginEmail" placeholder="Email" />
+          <input type="password" id="loginPassword" placeholder="Password" />
+          <button onclick="login()">Login</button>
+        </div>
+      </div>
+
+      <!-- Game Section -->
+      <div class="section" id="gameSection" style="display: none">
+        <h2>2. Game Controls</h2>
+        <p><strong>Logged in as:</strong> <span id="username"></span></p>
+        <p><strong>Money:</strong> $<span id="money"></span></p>
+        <p style="margin: 10px 0">
+          After login, the socket connects and the server auto-assigns you to a
+          room.
+        </p>
+        <button onclick="leaveRoom()" id="leaveBtn" disabled>
+          🚪 Leave Room
+        </button>
+        <button onclick="disconnectSocket()" id="disconnectBtn" disabled>
+          🔌 Disconnect Socket
+        </button>
+        <button onclick="logout()">Logout</button>
+      </div>
+
+      <!-- Room Info Section -->
+      <div class="section" id="roomSection" style="display: none">
+        <h2>3. Room Information</h2>
+        <p><strong>Room Code:</strong> <span id="roomCode"></span></p>
+        <p><strong>Status:</strong> <span id="roomStatus"></span></p>
+        <p><strong>Players:</strong> <span id="playerCount"></span></p>
+        <div id="playerList"></div>
+      </div>
+
+      <!-- Logs Section -->
+      <div class="section">
+        <h2>4. Activity Log</h2>
+        <div class="log" id="logArea"></div>
+        <button onclick="clearLog()">Clear Log</button>
+      </div>
+    </div>
+
+    <script>
+      let socket = null;
+      let token = null;
+      let currentUser = null;
+
+      function getBaseUrl() {
+        const value = document.getElementById("serverUrl").value.trim();
+        return value.replace(/\/$/, "");
+      }
+
+      // Logging
+      function log(message, type = "info") {
+        const logArea = document.getElementById("logArea");
+        const timestamp = new Date().toLocaleTimeString();
+        const logItem = document.createElement("div");
+        logItem.className = `log-item ${type}`;
+        logItem.textContent = `[${timestamp}] ${message}`;
+        logArea.appendChild(logItem);
+        logArea.scrollTop = logArea.scrollHeight;
+        console.log(message);
+      }
+
+      function clearLog() {
+        document.getElementById("logArea").innerHTML = "";
+      }
+
+      // Authentication
+      async function register() {
+        const username = document.getElementById("regUsername").value;
+        const email = document.getElementById("regEmail").value;
+        const password = document.getElementById("regPassword").value;
+
+        try {
+          const response = await fetch(`${getBaseUrl()}/api/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, email, password }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            log("✅ Registration successful!", "success");
+            token = result.data.token;
+            currentUser = result.data.user;
+            initializeGame();
+          } else {
+            log("❌ Registration failed: " + result.message, "error");
+          }
+        } catch (error) {
+          log("❌ Error: " + error.message, "error");
+        }
+      }
+
+      async function login() {
+        const email = document.getElementById("loginEmail").value;
+        const password = document.getElementById("loginPassword").value;
+
+        try {
+          const response = await fetch(`${getBaseUrl()}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            log("✅ Login successful!", "success");
+            token = result.data.token;
+            currentUser = result.data.user;
+            initializeGame();
+          } else {
+            log("❌ Login failed: " + result.message, "error");
+          }
+        } catch (error) {
+          log("❌ Error: " + error.message, "error");
+        }
+      }
+
+      function logout() {
+        if (socket) {
+          socket.disconnect();
+        }
+        token = null;
+        currentUser = null;
+        document.getElementById("authSection").style.display = "block";
+        document.getElementById("gameSection").style.display = "none";
+        document.getElementById("roomSection").style.display = "none";
+        log("👋 Logged out", "info");
+      }
+
+      // Initialize game after authentication
+      function initializeGame() {
+        document.getElementById("authSection").style.display = "none";
+        document.getElementById("gameSection").style.display = "block";
+        document.getElementById("username").textContent = currentUser.username;
+        document.getElementById("money").textContent = currentUser.money;
+
+        connectSocket();
+      }
+
+      // Socket.io connection
+      function connectSocket() {
+        socket = io(getBaseUrl(), {
+          auth: { token },
+        });
+
+        socket.on("connect", () => {
+          log(`🔌 Socket connected (${socket.id})`, "success");
+          document.getElementById("disconnectBtn").disabled = false;
+        });
+
+        socket.on("room:assigned", (payload) => {
+          log(`🏠 Assigned to room: ${payload.roomCode}`, "success");
+          updateRoomUI({
+            roomCode: payload.roomCode,
+            status: payload.status || "waiting",
+            currentPlayers: payload.playerCount,
+            maxPlayers: payload.maxPlayers,
+            players: payload.players || [],
+          });
+          document.getElementById("leaveBtn").disabled = false;
+        });
+
+        socket.on("room:playerDetails", (payload) => {
+          updatePlayerList(payload.players || []);
+          const currentPlayers = (payload.players || []).length;
+          document.getElementById(
+            "playerCount"
+          ).textContent = `${currentPlayers}/5`;
+          log(`👥 Player list updated (${currentPlayers}/5)`, "info");
+        });
+
+        socket.on("room:playerJoined", (payload) => {
+          log(
+            `👤 Player joined: ${payload.username} (${payload.playerCount}/5)`,
+            "info"
+          );
+        });
+
+        socket.on("room:playerLeft", (payload) => {
+          log(`👋 Player left: ${payload.username}`, "info");
+        });
+
+        // Support both names (older vs newer)
+        socket.on("game:start", (payload) => {
+          log(`🎮 GAME STARTED in room ${payload.roomCode}!`, "success");
+          document.getElementById("roomStatus").textContent = "ACTIVE";
+          document.getElementById("roomStatus").style.color = "green";
+        });
+        socket.on("gameStarted", () => {
+          log("🎮 GAME STARTED!", "success");
+          document.getElementById("roomStatus").textContent = "ACTIVE";
+          document.getElementById("roomStatus").style.color = "green";
+        });
+
+        socket.on("error", (data) => {
+          log(`❌ Error: ${data.message}`, "error");
+        });
+
+        socket.on("connect_error", (err) => {
+          log(`❌ Socket connect error: ${err.message}`, "error");
+        });
+
+        socket.on("disconnect", () => {
+          log("❌ Disconnected from server", "error");
+          document.getElementById("disconnectBtn").disabled = true;
+        });
+      }
+
+      function disconnectSocket() {
+        if (socket) {
+          socket.disconnect();
+          socket = null;
+          document.getElementById("leaveBtn").disabled = true;
+          document.getElementById("disconnectBtn").disabled = true;
+          log("🔌 Socket disconnected", "info");
+        }
+      }
+
+      function leaveRoom() {
+        if (socket) {
+          socket.emit("leaveRoom");
+        }
+      }
+
+      // UI Updates
+      function updateRoomUI(room) {
+        document.getElementById("roomSection").style.display = "block";
+        document.getElementById("roomCode").textContent = room.roomCode;
+        document.getElementById("roomStatus").textContent =
+          room.status.toUpperCase();
+        document.getElementById(
+          "playerCount"
+        ).textContent = `${room.currentPlayers}/${room.maxPlayers}`;
+        updatePlayerList(room.players);
+      }
+
+      function updatePlayerList(players) {
+        const playerList = document.getElementById("playerList");
+        playerList.innerHTML = "<h3>Players in Room:</h3>";
+
+        players.forEach((player, index) => {
+          const card = document.createElement("div");
+          card.className = "player-card";
+          card.innerHTML = `
+          <strong>${player.username}</strong><br>
+          💰 $${player.money}
+        `;
+          playerList.appendChild(card);
+        });
+      }
+    </script>
+  </body>
+</html>

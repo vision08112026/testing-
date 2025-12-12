@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Player Test - Game Backend</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      h1 {
+        color: white;
+        text-align: center;
+        margin-bottom: 30px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      }
+      .controls {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .controls h2 {
+        margin-bottom: 15px;
+        color: #333;
+      }
+      .players-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+      }
+      .player-box {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+      }
+      .player-box:hover {
+        transform: translateY(-5px);
+      }
+      .player-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #667eea;
+      }
+      .player-name {
+        font-size: 18px;
+        font-weight: bold;
+        color: #667eea;
+      }
+      .player-status {
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+      .status-offline {
+        background: #e0e0e0;
+        color: #666;
+      }
+      .status-connected {
+        background: #4caf50;
+        color: white;
+      }
+      .status-in-room {
+        background: #2196f3;
+        color: white;
+      }
+      .status-playing {
+        background: #ff9800;
+        color: white;
+      }
+      .player-info {
+        margin-bottom: 15px;
+      }
+      .info-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px;
+        background: #f5f5f5;
+        margin-bottom: 5px;
+        border-radius: 5px;
+      }
+      .info-label {
+        font-weight: 500;
+        color: #666;
+      }
+      .info-value {
+        font-weight: bold;
+        color: #333;
+      }
+      .player-actions {
+        display: flex;
+        gap: 10px;
+      }
+      button {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+      }
+      button:hover {
+        transform: scale(1.05);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn-login {
+        background: #4caf50;
+        color: white;
+      }
+      .btn-play {
+        background: #2196f3;
+        color: white;
+      }
+      .btn-leave {
+        background: #f44336;
+        color: white;
+      }
+      .room-info {
+        background: #fff3cd;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        border-left: 4px solid #ffc107;
+      }
+      .room-code {
+        font-weight: bold;
+        color: #856404;
+        font-size: 16px;
+      }
+      .log {
+        background: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+        max-height: 150px;
+        overflow-y: auto;
+        font-size: 12px;
+        font-family: "Courier New", monospace;
+      }
+      .log-item {
+        padding: 3px;
+        margin: 2px 0;
+      }
+      .log-success {
+        color: #4caf50;
+      }
+      .log-error {
+        color: #f44336;
+      }
+      .log-info {
+        color: #2196f3;
+      }
+      .master-controls {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+      }
+      .master-controls button {
+        flex: 1;
+        padding: 15px;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎮 Multi-Player Test Environment</h1>
+
+      <div class="controls">
+        <h2>Master Controls</h2>
+        <div class="master-controls">
+          <button class="btn-login" onclick="loginAllPlayers()">
+            🔑 Login All Players
+          </button>
+          <button class="btn-play" onclick="playAllPlayers()">
+            🎮 Play All (Join Game)
+          </button>
+          <button class="btn-leave" onclick="leaveAllPlayers()">
+            🚪 Leave All
+          </button>
+          <button onclick="disconnectAll()">🔌 Disconnect All</button>
+        </div>
+      </div>
+
+      <div class="players-grid" id="playersGrid"></div>
+    </div>
+
+    <script>
+      const API_URL = "http://localhost:5000";
+      const PLAYERS = [
+        { username: "player1", email: "player1@test.com", password: "pass123" },
+        { username: "player2", email: "player2@test.com", password: "pass123" },
+        { username: "player3", email: "player3@test.com", password: "pass123" },
+        { username: "player4", email: "player4@test.com", password: "pass123" },
+        { username: "player5", email: "player5@test.com", password: "pass123" },
+        { username: "player6", email: "player6@test.com", password: "pass123" },
+      ];
+
+      const playerStates = {};
+
+      // Initialize player boxes
+      function initializePlayers() {
+        const grid = document.getElementById("playersGrid");
+
+        PLAYERS.forEach((player, index) => {
+          playerStates[index] = {
+            player: player,
+            socket: null,
+            token: null,
+            status: "offline",
+            roomCode: null,
+            money: 1000,
+            logs: [],
+          };
+
+          const box = createPlayerBox(index);
+          grid.appendChild(box);
+        });
+      }
+
+      function createPlayerBox(index) {
+        const box = document.createElement("div");
+        box.className = "player-box";
+        box.id = `player-${index}`;
+
+        updatePlayerBox(index);
+        return box;
+      }
+
+      function updatePlayerBox(index) {
+        const state = playerStates[index];
+        const box = document.getElementById(`player-${index}`);
+
+        box.innerHTML = `
+        <div class="player-header">
+          <div class="player-name">${state.player.username}</div>
+          <div class="player-status status-${
+            state.status
+          }">${state.status.toUpperCase()}</div>
+        </div>
+        
+        <div class="player-info">
+          <div class="info-item">
+            <span class="info-label">💰 Money:</span>
+            <span class="info-value">$${state.money}</span>
+          </div>
+          ${
+            state.roomCode
+              ? `
+            <div class="room-info">
+              <div class="room-code">Room: ${state.roomCode}</div>
+            </div>
+          `
+              : ""
+          }
+        </div>
+
+        <div class="player-actions">
+          <button class="btn-login" onclick="loginPlayer(${index})" 
+            ${state.status !== "offline" ? "disabled" : ""}>
+            Login
+          </button>
+          <button class="btn-play" onclick="playPlayer(${index})" 
+            ${state.status !== "connected" ? "disabled" : ""}>
+            Play
+          </button>
+          <button class="btn-leave" onclick="leavePlayer(${index})" 
+            ${
+              state.status !== "in-room" && state.status !== "playing"
+                ? "disabled"
+                : ""
+            }>
+            Leave
+          </button>
+        </div>
+
+        <div class="log">
+          ${state.logs
+            .slice(-5)
+            .map(
+              (log) => `
+            <div class="log-item log-${log.type}">${log.message}</div>
+          `
+            )
+            .join("")}
+        </div>
+      `;
+      }
+
+      function addLog(index, message, type = "info") {
+        playerStates[index].logs.push({ message, type, time: Date.now() });
+        updatePlayerBox(index);
+      }
+
+      // Login a player
+      async function loginPlayer(index) {
+        const state = playerStates[index];
+
+        try {
+          addLog(index, "Logging in...", "info");
+
+          // Try login first, if fails, register
+          let response = await fetch(`${API_URL}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: state.player.email,
+              password: state.player.password,
+            }),
+          });
+
+          let result = await response.json();
+
+          // If login fails, register
+          if (!result.success) {
+            response = await fetch(`${API_URL}/api/auth/register`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(state.player),
+            });
+            result = await response.json();
+          }
+
+          if (result.success) {
+            state.token = result.data.token;
+            state.money = result.data.user.money;
+            connectSocket(index);
+            addLog(index, "✅ Logged in", "success");
+          } else {
+            addLog(index, "❌ Login failed", "error");
+          }
+        } catch (error) {
+          addLog(index, "❌ " + error.message, "error");
+        }
+      }
+
+      // Connect socket
+      function connectSocket(index) {
+        const state = playerStates[index];
+
+        state.socket = io(API_URL, {
+          auth: { token: state.token },
+        });
+
+        state.socket.on("connected", () => {
+          state.status = "connected";
+          addLog(index, "🔌 Connected", "success");
+          updatePlayerBox(index);
+        });
+
+        state.socket.on("roomAssigned", (room) => {
+          state.status = "in-room";
+          state.roomCode = room.roomCode;
+          addLog(
+            index,
+            `🏠 Joined ${room.roomCode} (${room.currentPlayers}/5)`,
+            "success"
+          );
+          updatePlayerBox(index);
+        });
+
+        state.socket.on("playerJoined", (data) => {
+          addLog(
+            index,
+            `👤 ${data.player.username} joined (${data.currentPlayers}/5)`,
+            "info"
+          );
+          updatePlayerBox(index);
+        });
+
+        state.socket.on("gameStarted", (data) => {
+          state.status = "playing";
+          addLog(index, "🎮 GAME STARTED!", "success");
+          updatePlayerBox(index);
+        });
+
+        state.socket.on("playerLeft", (data) => {
+          addLog(index, `👋 ${data.username} left`, "info");
+          updatePlayerBox(index);
+        });
+
+        state.socket.on("leftRoom", () => {
+          state.status = "connected";
+          state.roomCode = null;
+          addLog(index, "🚪 Left room", "info");
+          updatePlayerBox(index);
+        });
+
+        state.socket.on("error", (data) => {
+          addLog(index, "❌ " + data.message, "error");
+        });
+
+        state.socket.on("disconnect", () => {
+          state.status = "offline";
+          state.roomCode = null;
+          addLog(index, "❌ Disconnected", "error");
+          updatePlayerBox(index);
+        });
+      }
+
+      // Play game
+      function playPlayer(index) {
+        const state = playerStates[index];
+        if (state.socket) {
+          state.socket.emit("playGame");
+          addLog(index, "🎲 Searching for game...", "info");
+        }
+      }
+
+      // Leave room
+      function leavePlayer(index) {
+        const state = playerStates[index];
+        if (state.socket) {
+          state.socket.emit("leaveRoom");
+        }
+      }
+
+      // Master controls
+      async function loginAllPlayers() {
+        for (let i = 0; i < PLAYERS.length; i++) {
+          await loginPlayer(i);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+
+      function playAllPlayers() {
+        PLAYERS.forEach((_, index) => {
+          if (playerStates[index].status === "connected") {
+            playPlayer(index);
+          }
+        });
+      }
+
+      function leaveAllPlayers() {
+        PLAYERS.forEach((_, index) => {
+          if (
+            playerStates[index].status === "in-room" ||
+            playerStates[index].status === "playing"
+          ) {
+            leavePlayer(index);
+          }
+        });
+      }
+
+      function disconnectAll() {
+        PLAYERS.forEach((_, index) => {
+          const state = playerStates[index];
+          if (state.socket) {
+            state.socket.disconnect();
+          }
+        });
+      }
+
+      // Initialize on load
+      initializePlayers();
+    </script>
+  </body>
+</html>
