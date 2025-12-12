@@ -1,5 +1,5 @@
 // Load environment variables (only if .env file exists locally)
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 
