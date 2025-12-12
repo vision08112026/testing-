@@ -1,9 +1,8 @@
 # Railway configuration
-# Deploys using the Dockerfile in this repo.
+# Use nixpacks instead of Dockerfile to properly handle environment variables
 
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+builder = "NIXPACKS"
 
 [deploy]
 startCommand = "npm start"
