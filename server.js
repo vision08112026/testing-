@@ -49,14 +49,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check endpoint for Docker
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-  });
-});
-
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 
